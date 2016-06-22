@@ -14,11 +14,15 @@ class B(d: Double, i: Int) extends A(d)
 object Main {
   def main (args : Array [String]) : Unit = {   
     fprintf (stdout, c"Test related to array copy\n")
+
+    testcopyObject ()
     
     testcopyInt ()
     testcopyByte ()    
     testcopyDouble ()
     testcopyBoolean ()
+    
+    testClone ()
     
     others()
     
@@ -28,6 +32,8 @@ object Main {
   // not related to copy, but sanity check after big refactoring
   def others() {
     val arr = new Array[Int] (10)
+    
+    fprintf (stdout, c"\nOthers\n")
     
     fprintf (stdout, c"apply() and update()\n")
     val i = 100
@@ -514,13 +520,158 @@ object Main {
     
   }
   
+  /*
+   *
+   */
+  
+  class A (i: Int) {
+    def _i = i
+  }
+  
+  class B (i: Int, d: Double) extends A(i) {
+    def _d = d
+  }
+  
+  def testcopyObject () {
+    fprintf (stdout, c"\ntest copy array[Object]\n")
+    
+    def init(arr: Array[B]) = {
+      var c = 0
+    
+      while (c < arr.length) {
+        arr (c) = new B (c, c.toDouble)
+      
+        c += 1
+      }         
+    }
+    
+    val len = 10
+    
+    val arrB = new Array[B] (len)
+    init (arrB)
+        
+    fprintf (stdout, c"arrB: Array[B :> A] -> arrA: Array[A]\n")
+    fprintf (stdout, c"arrB\n")    
+    dumpB(arrB)
+    
+    val arrA = new Array[A] (len * 2)
+    
+    scala.Array.copy (arrB, 0, arrA, 5, 10)
+    
+    fprintf (stdout, c"arrA\n")    
+    dumpA(arrA)
+
+    fprintf (stdout, c"arrB -> arrB without overlap (1/2)\n")
+    scala.Array.copy (arrB, 0, arrB, 5, 5)      
+    fprintf (stdout, c"arrB\n")
+    dumpB(arrB)
+    
+    fprintf (stdout, c"arrB -> arrB without overlap (2/2)\n")
+    scala.Array.copy (arrB, 6, arrB, 4, 2)      
+    fprintf (stdout, c"arrB\n")
+    dumpB(arrB)
+
+    fprintf (stdout, c"arrB -> arrB with overlap -> backward copy\n")
+    init (arrB)
+    fprintf (stdout, c"arrB before\n")
+    dumpB(arrB)
+    scala.Array.copy (arrB, 0, arrB, 2, 6)      
+    fprintf (stdout, c"arrB after\n")
+    dumpB(arrB)
+
+    fprintf (stdout, c"arrB -> arrB with overlap -> forward copy\n")
+    init (arrB)
+    fprintf (stdout, c"arrB before\n")
+    dumpB(arrB)
+    scala.Array.copy (arrB, 2, arrB, 0, 6)      
+    fprintf (stdout, c"arrB after\n")
+    dumpB(arrB)
+
+    //
+    // from now on, exceptions are expected 
+    //
+    
+    // null's
+    
+    fprintf (stdout, c"src null\n")
+    try {
+      scala.Array.copy (null, 0, arrA, 5, 2)      
+      fprintf (stdout, c"-> fail\n")
+    }
+    catch {
+      case th: Throwable => fprintf (stdout, c"-> exception\n")         
+    }
+    
+    fprintf (stdout, c"dest null\n")
+    try {
+      scala.Array.copy (arrB, 0, null, 5, -2)      
+      fprintf (stdout, c"-> fail\n")
+    }
+    catch {
+      case th: Throwable => fprintf (stdout, c"-> exception\n")         
+    }
+    
+    // test boundaries
+    
+    fprintf (stdout, c"length negative\n")
+    try {
+      scala.Array.copy (arrB, 0, arrA, 5, -1)
+      fprintf (stdout, c"-> fail\n")
+    }
+    catch {
+      case th: Throwable => fprintf (stdout, c"-> exception\n")         
+    }
+    
+    fprintf (stdout, c"destPos + len > dest.length\n")    
+    try {
+      scala.Array.copy (arrB, 0, arrA, 15, 10)
+      fprintf (stdout, c"-> fail\n")
+    }    
+    catch {
+      case th: Throwable => fprintf (stdout, c"-> exception\n")         
+    }
+  
+    fprintf (stdout, c"fromPos + len > from.length\n")
+    try {
+      scala.Array.copy (arrB, 5, arrA, 5, 10)      
+      fprintf (stdout, c"-> fail\n")
+    }    
+    catch {
+      case th: Throwable => fprintf (stdout, c"-> exception\n")         
+    }
+  
+    fprintf (stdout, c"toPos negative\n")
+    try {
+      scala.Array.copy (arrB, 0, arrA, -1, 10)
+      fprintf (stdout, c"-> fail\n")
+    }
+    catch {
+      case th: Throwable => fprintf (stdout, c"-> exception\n")         
+    }
+
+    fprintf (stdout, c"fromPos negative\n")
+    try {    
+      scala.Array.copy (arrB, -1, arrA, 5, 10)
+      fprintf (stdout, c"-> fail\n")
+    }      
+    catch {
+      case th: Throwable => fprintf (stdout, c"-> exception\n")         
+    }
+    
+    // invalid copy ()
+    fprintf (stdout, c"Different type of array will FAIL until the type parameter isn't checked\n")
+  }
+  
+  /*
+   *
+   */
+  
   def testClone () = {
-    fprintf (stdout, c"Test Array clone\n")
+    fprintf (stdout, c"\nTest Array clone\n")
     
     val len = 10
     
     val arrInt = new Array[Int] (len)
-    // val arrInt = IntArray.alloc (len)
     
     var c = 0
     
@@ -543,6 +694,44 @@ object Main {
    * helper methods
    */
     
+  def dumpB (arr : Array [B]) {
+    var c = 0
+    
+    fprintf (stdout, c"len: %d\n", arr.length)
+    
+    while (c < arr.length) {
+      val (i, d) = if (arr (c) != null) (arr (c)._i, arr (c)._d) else (-1, -1.0)
+      
+      fprintf (stdout, c"(%d -> %d, %f)", c, i, d)
+      
+      if (c == arr.length - 1)
+        fprintf (stdout, c"\n")
+      else
+        fprintf (stdout, c", ")
+      
+      c += 1
+    }
+  }
+
+  def dumpA (arr : Array [A]) {
+    var c = 0
+    
+    fprintf (stdout, c"len: %d\n", arr.length)
+    
+    while (c < arr.length) {
+      val i = if (arr (c) != null) arr (c)._i else -1
+      
+      fprintf (stdout, c"(%d -> %d)", c, i)
+      
+      if (c == arr.length - 1)
+        fprintf (stdout, c"\n")
+      else
+        fprintf (stdout, c", ")
+      
+      c += 1
+    }
+  }
+
   def dump (arr : Array [Byte]) {
     var c = 0
     
@@ -648,6 +837,7 @@ object Main {
       c += 1
     }
   }
+  
   def dumpObjAsInt (arr : Array [Any]) {
     var c = 0
     
